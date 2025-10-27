@@ -26,7 +26,6 @@ static bool _is_initialized = false;
 
 static esp_err_t _zh_ac_dimmer_validate_config(const zh_ac_dimmer_init_config_t *config);
 static esp_err_t _zh_ac_dimmer_gpio_init(const zh_ac_dimmer_init_config_t *config);
-static esp_err_t _zh_ac_dimmer_interrupt_init(const zh_ac_dimmer_init_config_t *config);
 static esp_err_t _zh_ac_dimmer_timer_init(void);
 static void _zh_ac_dimmer_isr_handler(void *arg);
 static bool _zh_ac_dimmer_timer_on_alarm_cb(gptimer_handle_t timer, const gptimer_alarm_event_data_t *edata, void *user_ctx);
@@ -39,8 +38,6 @@ esp_err_t zh_ac_dimmer_init(const zh_ac_dimmer_init_config_t *config)
     ZH_ERROR_CHECK(err == ESP_OK, err, "AC dimmer initialization failed. Initial configuration check failed.");
     err = _zh_ac_dimmer_gpio_init(config);
     ZH_ERROR_CHECK(err == ESP_OK, err, "AC dimmer initialization failed. GPIO initialization failed.");
-    err = _zh_ac_dimmer_interrupt_init(config);
-    ZH_ERROR_CHECK(err == ESP_OK, err, "AC dimmer initialization failed. Interrupt initialization failed.");
     err = _zh_ac_dimmer_timer_init();
     ZH_ERROR_CHECK(err == ESP_OK, err, "AC dimmer initialization failed. Timer initialization failed.");
     _init_config = *config;
@@ -97,6 +94,7 @@ esp_err_t _zh_ac_dimmer_gpio_init(const zh_ac_dimmer_init_config_t *config)
     };
     esp_err_t err = gpio_config(&triac_gpio_config);
     ZH_ERROR_CHECK(err == ESP_OK, err, "Triac GPIO configuration failed.");
+    gpio_set_level(_init_config.triac_gpio, 0);
     gpio_config_t zero_cross_gpio_config = {
         .intr_type = GPIO_INTR_POSEDGE,
         .mode = GPIO_MODE_INPUT,
@@ -106,13 +104,7 @@ esp_err_t _zh_ac_dimmer_gpio_init(const zh_ac_dimmer_init_config_t *config)
     };
     err = gpio_config(&zero_cross_gpio_config);
     ZH_ERROR_CHECK(err == ESP_OK, err, "Zero cross GPIO configuration failed.");
-    gpio_set_level(_init_config.triac_gpio, 0);
-    return ESP_OK;
-}
-
-esp_err_t _zh_ac_dimmer_interrupt_init(const zh_ac_dimmer_init_config_t *config)
-{
-    esp_err_t err = gpio_install_isr_service(ESP_INTR_FLAG_LEVEL3);
+    err = gpio_install_isr_service(ESP_INTR_FLAG_LEVEL3);
     ZH_ERROR_CHECK(err == ESP_OK, err, "Failed install isr service.")
     err = gpio_isr_handler_add(config->zero_cross_gpio, _zh_ac_dimmer_isr_handler, NULL);
     ZH_ERROR_CHECK(err == ESP_OK, err, "Failed add isr handler.");
