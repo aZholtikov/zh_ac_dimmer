@@ -9,6 +9,18 @@
 1. Supports frequency up to 400 Hz.
 2. Automatic frequency detection.
 
+## Attention
+
+For correct operation, please enable the following settings in the menuconfig:
+
+```text
+GPIO_CTRL_FUNC_IN_IRAM
+CONFIG_GPTIMER_ISR_HANDLER_IN_IRAM
+CONFIG_GPTIMER_CTRL_FUNC_IN_IRAM
+CONFIG_GPTIMER_ISR_CACHE_SAFE
+CONFIG_GPTIMER_OBJ_CACHE_SAFE
+```
+
 ## Using
 
 In an existing project, run the following command to install the components:
