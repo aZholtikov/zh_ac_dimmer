@@ -94,7 +94,7 @@ static esp_err_t _zh_ac_dimmer_gpio_init(const zh_ac_dimmer_init_config_t *confi
     };
     esp_err_t err = gpio_config(&triac_gpio_config);
     ZH_ERROR_CHECK(err == ESP_OK, err, "Triac GPIO configuration failed.");
-    gpio_set_level(_init_config.triac_gpio, 0);
+    gpio_set_level(config->triac_gpio, 0);
     gpio_config_t zero_cross_gpio_config = {
         .intr_type = GPIO_INTR_POSEDGE,
         .mode = GPIO_MODE_INPUT,
