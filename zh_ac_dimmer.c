@@ -51,16 +51,16 @@ esp_err_t zh_ac_dimmer_deinit(void)
 {
     ZH_LOGI("AC dimmer deinitialization started.");
     ZH_ERROR_CHECK(_is_initialized == true, ESP_ERR_INVALID_STATE, NULL, "AC dimmer deinitialization failed. AC dimmer is not initialized.");
-    _is_dimmer_work = false;
-    if (_dimmer_timer != NULL)
-    {
-        gptimer_disable(_dimmer_timer);
-        gptimer_del_timer(_dimmer_timer);
-        _dimmer_timer = NULL;
-    }
+    gptimer_stop(_dimmer_timer);
+    gptimer_disable(_dimmer_timer);
+    gptimer_del_timer(_dimmer_timer);
     gpio_isr_handler_remove(_init_config.zero_cross_gpio);
     gpio_uninstall_isr_service();
+    gpio_reset_pin(_init_config.triac_gpio);
+    gpio_reset_pin(_init_config.zero_cross_gpio);
+    _is_dimmer_work = false;
     _is_initialized = false;
+    _dimmer_timer = NULL;
     _dimmer_value = 0;
     _current_period_us = 0;
     _prev_period_us = 0;
