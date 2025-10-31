@@ -5,11 +5,12 @@ static const char *TAG = "zh_ac_dimmer";
 #define ZH_LOGI(msg, ...) ESP_LOGI(TAG, msg, ##__VA_ARGS__)
 #define ZH_LOGE(msg, err, ...) ESP_LOGE(TAG, "[%s:%d:%s] " msg, __FILE__, __LINE__, esp_err_to_name(err), ##__VA_ARGS__)
 
-#define ZH_ERROR_CHECK(cond, err, msg, ...) \
-    if (!(cond))                            \
-    {                                       \
-        ZH_LOGE(msg, err);                  \
-        return err;                         \
+#define ZH_ERROR_CHECK(cond, err, cleanup, msg, ...) \
+    if (!(cond))                                     \
+    {                                                \
+        ZH_LOGE(msg, err, ##__VA_ARGS__);            \
+        cleanup;                                     \
+        return err;                                  \
     }
 
 static gptimer_handle_t _dimmer_timer = NULL;
@@ -33,13 +34,13 @@ static bool _zh_ac_dimmer_timer_on_alarm_cb(gptimer_handle_t timer, const gptime
 esp_err_t zh_ac_dimmer_init(const zh_ac_dimmer_init_config_t *config)
 {
     ZH_LOGI("AC dimmer initialization started.");
-    ZH_ERROR_CHECK(_is_initialized == false, ESP_ERR_INVALID_STATE, "AC dimmer initialization failed. AC dimmer is already initialized.");
+    ZH_ERROR_CHECK(_is_initialized == false, ESP_ERR_INVALID_STATE, NULL, "AC dimmer initialization failed. AC dimmer is already initialized.");
     esp_err_t err = _zh_ac_dimmer_validate_config(config);
-    ZH_ERROR_CHECK(err == ESP_OK, err, "AC dimmer initialization failed. Initial configuration check failed.");
+    ZH_ERROR_CHECK(err == ESP_OK, err, NULL, "AC dimmer initialization failed. Initial configuration check failed.");
     err = _zh_ac_dimmer_gpio_init(config);
-    ZH_ERROR_CHECK(err == ESP_OK, err, "AC dimmer initialization failed. GPIO initialization failed.");
+    ZH_ERROR_CHECK(err == ESP_OK, err, NULL, "AC dimmer initialization failed. GPIO initialization failed.");
     err = _zh_ac_dimmer_timer_init();
-    ZH_ERROR_CHECK(err == ESP_OK, err, "AC dimmer initialization failed. Timer initialization failed.");
+    ZH_ERROR_CHECK(err == ESP_OK, err, NULL, "AC dimmer initialization failed. Timer initialization failed.");
     _init_config = *config;
     _is_initialized = true;
     ZH_LOGI("AC dimmer initialization completed successfully.");
@@ -49,7 +50,7 @@ esp_err_t zh_ac_dimmer_init(const zh_ac_dimmer_init_config_t *config)
 esp_err_t zh_ac_dimmer_deinit(void)
 {
     ZH_LOGI("AC dimmer deinitialization started.");
-    ZH_ERROR_CHECK(_is_initialized == true, ESP_ERR_INVALID_STATE, "AC dimmer deinitialization failed. AC dimmer is not initialized.");
+    ZH_ERROR_CHECK(_is_initialized == true, ESP_ERR_INVALID_STATE, NULL, "AC dimmer deinitialization failed. AC dimmer is not initialized.");
     _is_dimmer_work = false;
     if (_dimmer_timer != NULL)
     {
@@ -72,7 +73,7 @@ esp_err_t zh_ac_dimmer_deinit(void)
 esp_err_t zh_ac_dimmer_start(void)
 {
     ZH_LOGI("AC dimmer start begin.");
-    ZH_ERROR_CHECK(_is_initialized == true, ESP_ERR_INVALID_STATE, "AC dimmer start failed. AC dimmer is not initialized.");
+    ZH_ERROR_CHECK(_is_initialized == true, ESP_ERR_INVALID_STATE, NULL, "AC dimmer start failed. AC dimmer is not initialized.");
     _is_dimmer_work = true;
     ZH_LOGI("AC dimmer start completed successfully.");
     return ESP_OK;
@@ -81,7 +82,7 @@ esp_err_t zh_ac_dimmer_start(void)
 esp_err_t zh_ac_dimmer_stop(void)
 {
     ZH_LOGI("AC dimmer stop begin.");
-    ZH_ERROR_CHECK(_is_initialized == true, ESP_ERR_INVALID_STATE, "AC dimmer stop failed. AC dimmer is not initialized.");
+    ZH_ERROR_CHECK(_is_initialized == true, ESP_ERR_INVALID_STATE, NULL, "AC dimmer stop failed. AC dimmer is not initialized.");
     _is_dimmer_work = false;
     ZH_LOGI("AC dimmer stop completed successfully.");
     return ESP_OK;
@@ -90,8 +91,8 @@ esp_err_t zh_ac_dimmer_stop(void)
 esp_err_t zh_ac_dimmer_set(uint8_t value)
 {
     ZH_LOGI("AC dimmer setup begin.");
-    ZH_ERROR_CHECK(_is_initialized == true, ESP_ERR_INVALID_STATE, "AC dimmer stop failed. AC dimmer is not initialized.");
-    ZH_ERROR_CHECK(value <= 100, ESP_ERR_INVALID_ARG, "AC dimmer setup failed. Dimming value invalid.");
+    ZH_ERROR_CHECK(_is_initialized == true, ESP_ERR_INVALID_STATE, NULL, "AC dimmer stop failed. AC dimmer is not initialized.");
+    ZH_ERROR_CHECK(value <= 100, ESP_ERR_INVALID_ARG, NULL, "AC dimmer setup failed. Dimming value invalid.");
     _dimmer_value = value;
     ZH_LOGI("AC dimmer setup completed successfully.");
     return ESP_OK;
@@ -99,10 +100,10 @@ esp_err_t zh_ac_dimmer_set(uint8_t value)
 
 static esp_err_t _zh_ac_dimmer_validate_config(const zh_ac_dimmer_init_config_t *config)
 {
-    ZH_ERROR_CHECK(config != NULL, ESP_ERR_INVALID_ARG, "Initial config is NULL.");
-    ZH_ERROR_CHECK((config->zero_cross_gpio >= GPIO_NUM_0 && config->zero_cross_gpio < GPIO_NUM_MAX), ESP_ERR_INVALID_ARG, "Zero cross GPIO invalid.");
-    ZH_ERROR_CHECK((config->triac_gpio >= GPIO_NUM_0 && config->triac_gpio < GPIO_NUM_MAX), ESP_ERR_INVALID_ARG, "Triac GPIO invalid.");
-    ZH_ERROR_CHECK((config->zero_cross_gpio != config->triac_gpio), ESP_ERR_INVALID_ARG, "Both GPIO is same.");
+    ZH_ERROR_CHECK(config != NULL, ESP_ERR_INVALID_ARG, NULL, "Initial config is NULL.");
+    ZH_ERROR_CHECK((config->zero_cross_gpio >= GPIO_NUM_0 && config->zero_cross_gpio < GPIO_NUM_MAX), ESP_ERR_INVALID_ARG, NULL, "Zero cross GPIO invalid.");
+    ZH_ERROR_CHECK((config->triac_gpio >= GPIO_NUM_0 && config->triac_gpio < GPIO_NUM_MAX), ESP_ERR_INVALID_ARG, NULL, "Triac GPIO invalid.");
+    ZH_ERROR_CHECK((config->zero_cross_gpio != config->triac_gpio), ESP_ERR_INVALID_ARG, NULL, "Both GPIO is same.");
     return ESP_OK;
 }
 
@@ -116,7 +117,7 @@ static esp_err_t _zh_ac_dimmer_gpio_init(const zh_ac_dimmer_init_config_t *confi
         .pull_up_en = GPIO_PULLUP_DISABLE,
     };
     esp_err_t err = gpio_config(&triac_gpio_config);
-    ZH_ERROR_CHECK(err == ESP_OK, err, "Triac GPIO configuration failed.");
+    ZH_ERROR_CHECK(err == ESP_OK, err, NULL, "Triac GPIO configuration failed.");
     gpio_set_level(config->triac_gpio, 0);
     gpio_config_t zero_cross_gpio_config = {
         .intr_type = GPIO_INTR_POSEDGE,
@@ -126,11 +127,11 @@ static esp_err_t _zh_ac_dimmer_gpio_init(const zh_ac_dimmer_init_config_t *confi
         .pull_up_en = GPIO_PULLUP_DISABLE,
     };
     err = gpio_config(&zero_cross_gpio_config);
-    ZH_ERROR_CHECK(err == ESP_OK, err, "Zero cross GPIO configuration failed.");
+    ZH_ERROR_CHECK(err == ESP_OK, err, gpio_reset_pin(config->triac_gpio), "Zero cross GPIO configuration failed.");
     err = gpio_install_isr_service(ESP_INTR_FLAG_LEVEL3);
-    ZH_ERROR_CHECK(err == ESP_OK, err, "Failed install isr service.")
+    ZH_ERROR_CHECK(err == ESP_OK, err, gpio_reset_pin(config->triac_gpio); gpio_reset_pin(config->zero_cross_gpio), "Failed install isr service.")
     err = gpio_isr_handler_add(config->zero_cross_gpio, _zh_ac_dimmer_isr_handler, NULL);
-    ZH_ERROR_CHECK(err == ESP_OK, err, "Failed add isr handler.");
+    ZH_ERROR_CHECK(err == ESP_OK, err, gpio_uninstall_isr_service(); gpio_reset_pin(config->triac_gpio); gpio_reset_pin(config->zero_cross_gpio), "Failed add isr handler.");
     return ESP_OK;
 }
 
@@ -142,14 +143,14 @@ static esp_err_t _zh_ac_dimmer_timer_init(void)
         .resolution_hz = 1 * 1000 * 1000,
     };
     esp_err_t err = gptimer_new_timer(&timer_config, &_dimmer_timer);
-    ZH_ERROR_CHECK(err == ESP_OK, err, "Failed create dimmer timer.");
+    ZH_ERROR_CHECK(err == ESP_OK, err, NULL, "Failed create dimmer timer.");
     gptimer_event_callbacks_t cbs = {
         .on_alarm = _zh_ac_dimmer_timer_on_alarm_cb,
     };
     err = gptimer_register_event_callbacks(_dimmer_timer, &cbs, NULL);
-    ZH_ERROR_CHECK(err == ESP_OK, err, "Failed register dimmer timer event callbacks.");
+    ZH_ERROR_CHECK(err == ESP_OK, err, gptimer_del_timer(_dimmer_timer), "Failed register dimmer timer event callbacks.");
     err = gptimer_enable(_dimmer_timer);
-    ZH_ERROR_CHECK(err == ESP_OK, err, "Failed enable dimmer timer.");
+    ZH_ERROR_CHECK(err == ESP_OK, err, gptimer_register_event_callbacks(_dimmer_timer, NULL, NULL); gptimer_del_timer(_dimmer_timer), "Failed enable dimmer timer.");
     return ESP_OK;
 }
 
