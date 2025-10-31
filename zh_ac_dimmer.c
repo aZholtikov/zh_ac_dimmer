@@ -77,8 +77,8 @@ esp_err_t zh_ac_dimmer_set(uint8_t value)
 static esp_err_t _zh_ac_dimmer_validate_config(const zh_ac_dimmer_init_config_t *config)
 {
     ZH_ERROR_CHECK(config != NULL, ESP_ERR_INVALID_ARG, "Initial config is NULL.");
-    ZH_ERROR_CHECK((config->zero_cross_gpio >= GPIO_NUM_0 && config->zero_cross_gpio <= GPIO_NUM_MAX), ESP_ERR_INVALID_ARG, "Zero cross GPIO invalid.");
-    ZH_ERROR_CHECK((config->triac_gpio >= GPIO_NUM_0 && config->triac_gpio <= GPIO_NUM_MAX), ESP_ERR_INVALID_ARG, "Triac GPIO invalid.");
+    ZH_ERROR_CHECK((config->zero_cross_gpio >= GPIO_NUM_0 && config->zero_cross_gpio < GPIO_NUM_MAX), ESP_ERR_INVALID_ARG, "Zero cross GPIO invalid.");
+    ZH_ERROR_CHECK((config->triac_gpio >= GPIO_NUM_0 && config->triac_gpio < GPIO_NUM_MAX), ESP_ERR_INVALID_ARG, "Triac GPIO invalid.");
     ZH_ERROR_CHECK((config->zero_cross_gpio != config->triac_gpio), ESP_ERR_INVALID_ARG, "Both GPIO is same.");
     return ESP_OK;
 }
