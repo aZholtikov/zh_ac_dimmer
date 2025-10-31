@@ -47,6 +47,13 @@ extern "C"
     esp_err_t zh_ac_dimmer_init(const zh_ac_dimmer_init_config_t *config);
 
     /**
+     * @brief Deinitialize AC dimmer.
+     *
+     * @return ESP_OK if success or an error code otherwise.
+     */
+    esp_err_t zh_ac_dimmer_deinit(void);
+
+    /**
      * @brief Start AC dimmer.
      *
      * @return ESP_OK if success or an error code otherwise.
