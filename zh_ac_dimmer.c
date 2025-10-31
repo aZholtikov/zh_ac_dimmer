@@ -16,10 +16,10 @@ static gptimer_handle_t _dimmer_timer = NULL;
 static gptimer_alarm_config_t _alarm_config = {0};
 
 static zh_ac_dimmer_init_config_t _init_config = {0};
-static volatile uint64_t _prev_micros = 0;
-static volatile uint32_t _current_frequency = 0;
-static volatile uint32_t _prev_frequency = 0;
-static volatile uint16_t _zero_cross_time = 0;
+static volatile uint64_t _prev_us = 0;
+static volatile uint32_t _current_period_us = 0;
+static volatile uint32_t _prev_period_us = 0;
+static volatile uint16_t _zero_cross_us = 0;
 static volatile uint8_t _dimmer_value = 0;
 static volatile bool _is_dimmer_work = false;
 static bool _is_initialized = false;
@@ -61,10 +61,10 @@ esp_err_t zh_ac_dimmer_deinit(void)
     gpio_uninstall_isr_service();
     _is_initialized = false;
     _dimmer_value = 0;
-    _current_frequency = 0;
-    _prev_frequency = 0;
-    _zero_cross_time = 0;
-    _prev_micros = 0;
+    _current_period_us = 0;
+    _prev_period_us = 0;
+    _zero_cross_us = 0;
+    _prev_us = 0;
     ZH_LOGI("AC dimmer deinitialization completed successfully.");
     return ESP_OK;
 }
@@ -160,18 +160,18 @@ static void IRAM_ATTR _zh_ac_dimmer_isr_handler(void *arg)
         return;
     }
     gpio_set_level(_init_config.triac_gpio, 0);
-    uint64_t _current_micros = esp_timer_get_time();
-    _current_frequency = _current_micros - _prev_micros;
-    _prev_micros = _current_micros;
-    if (_current_frequency < 1000)
+    uint64_t _current_us = esp_timer_get_time();
+    _current_period_us = (uint32_t)(_current_us - _prev_us);
+    _prev_us = _current_us;
+    if (_current_period_us < 1000)
     {
-        if (_current_frequency > 50)
+        if (_current_period_us > 50)
         {
-            _zero_cross_time = _current_frequency;
+            _zero_cross_us = (uint16_t)_current_period_us;
         }
-        _current_frequency = _prev_frequency;
+        _current_period_us = _prev_period_us;
     }
-    _prev_frequency = _current_frequency;
+    _prev_period_us = _current_period_us;
     if (_dimmer_value != 0)
     {
         if (_dimmer_value == 100)
@@ -179,7 +179,7 @@ static void IRAM_ATTR _zh_ac_dimmer_isr_handler(void *arg)
             gpio_set_level(_init_config.triac_gpio, 1);
             return;
         }
-        _alarm_config.alarm_count = ((_current_frequency / 110) * (100 - _dimmer_value)) + _zero_cross_time;
+        _alarm_config.alarm_count = (uint64_t)(((_current_period_us / 110) * (100 - _dimmer_value)) + _zero_cross_us);
         _alarm_config.flags.auto_reload_on_alarm = false;
         gptimer_set_alarm_action(_dimmer_timer, &_alarm_config); // This function is allowed to run within ISR context.
         gptimer_start(_dimmer_timer);                            // This function is allowed to run within ISR context.
