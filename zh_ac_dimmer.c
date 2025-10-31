@@ -16,12 +16,12 @@ static gptimer_handle_t _dimmer_timer = NULL;
 static gptimer_alarm_config_t _alarm_config = {0};
 
 static zh_ac_dimmer_init_config_t _init_config = {0};
-static uint64_t _prev_micros = 0;
-static uint32_t _current_frequency = 0;
-static uint32_t _prev_frequency = 0;
-static uint16_t _zero_cross_time = 0;
-static uint8_t _dimmer_value = 0;
-static bool _is_dimmer_work = false;
+static volatile uint64_t _prev_micros = 0;
+static volatile uint32_t _current_frequency = 0;
+static volatile uint32_t _prev_frequency = 0;
+static volatile uint16_t _zero_cross_time = 0;
+static volatile uint8_t _dimmer_value = 0;
+static volatile bool _is_dimmer_work = false;
 static bool _is_initialized = false;
 
 static esp_err_t _zh_ac_dimmer_validate_config(const zh_ac_dimmer_init_config_t *config);
@@ -74,7 +74,7 @@ esp_err_t zh_ac_dimmer_set(uint8_t value)
     return ESP_OK;
 }
 
-esp_err_t _zh_ac_dimmer_validate_config(const zh_ac_dimmer_init_config_t *config)
+static esp_err_t _zh_ac_dimmer_validate_config(const zh_ac_dimmer_init_config_t *config)
 {
     ZH_ERROR_CHECK(config != NULL, ESP_ERR_INVALID_ARG, "Initial config is NULL.");
     ZH_ERROR_CHECK((config->zero_cross_gpio >= GPIO_NUM_0 && config->zero_cross_gpio <= GPIO_NUM_MAX), ESP_ERR_INVALID_ARG, "Zero cross GPIO invalid.");
@@ -83,7 +83,7 @@ esp_err_t _zh_ac_dimmer_validate_config(const zh_ac_dimmer_init_config_t *config
     return ESP_OK;
 }
 
-esp_err_t _zh_ac_dimmer_gpio_init(const zh_ac_dimmer_init_config_t *config)
+static esp_err_t _zh_ac_dimmer_gpio_init(const zh_ac_dimmer_init_config_t *config)
 {
     gpio_config_t triac_gpio_config = {
         .intr_type = GPIO_INTR_DISABLE,
@@ -111,7 +111,7 @@ esp_err_t _zh_ac_dimmer_gpio_init(const zh_ac_dimmer_init_config_t *config)
     return ESP_OK;
 }
 
-esp_err_t _zh_ac_dimmer_timer_init(void)
+static esp_err_t _zh_ac_dimmer_timer_init(void)
 {
     gptimer_config_t timer_config = {
         .clk_src = GPTIMER_CLK_SRC_DEFAULT,
@@ -130,7 +130,7 @@ esp_err_t _zh_ac_dimmer_timer_init(void)
     return ESP_OK;
 }
 
-void IRAM_ATTR _zh_ac_dimmer_isr_handler(void *arg)
+static void IRAM_ATTR _zh_ac_dimmer_isr_handler(void *arg)
 {
     if (_is_dimmer_work == false)
     {
@@ -158,12 +158,12 @@ void IRAM_ATTR _zh_ac_dimmer_isr_handler(void *arg)
         }
         _alarm_config.alarm_count = ((_current_frequency / 110) * (100 - _dimmer_value)) + _zero_cross_time;
         _alarm_config.flags.auto_reload_on_alarm = false;
-        gptimer_set_alarm_action(_dimmer_timer, &_alarm_config);
-        gptimer_start(_dimmer_timer);
+        gptimer_set_alarm_action(_dimmer_timer, &_alarm_config); // This function is allowed to run within ISR context.
+        gptimer_start(_dimmer_timer);                            // This function is allowed to run within ISR context.
     }
 }
 
-bool _zh_ac_dimmer_timer_on_alarm_cb(gptimer_handle_t timer, const gptimer_alarm_event_data_t *edata, void *user_ctx)
+static bool IRAM_ATTR _zh_ac_dimmer_timer_on_alarm_cb(gptimer_handle_t timer, const gptimer_alarm_event_data_t *edata, void *user_ctx)
 {
     gpio_set_level(_init_config.triac_gpio, 1);
     gptimer_stop(_dimmer_timer);
