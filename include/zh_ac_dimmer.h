@@ -20,10 +20,10 @@
         .triac_gpio = GPIO_NUM_MAX}
 
 #ifdef __cplusplus
-
 extern "C"
 {
 #endif
+
     /**
      * @brief Structure for initial initialization of AC dimmer.
      */
