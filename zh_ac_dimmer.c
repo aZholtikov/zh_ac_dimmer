@@ -40,7 +40,8 @@ esp_err_t zh_ac_dimmer_init(const zh_ac_dimmer_init_config_t *config)
     err = _zh_ac_dimmer_gpio_init(config);
     ZH_ERROR_CHECK(err == ESP_OK, err, NULL, "AC dimmer initialization failed. GPIO initialization failed.");
     err = _zh_ac_dimmer_timer_init();
-    ZH_ERROR_CHECK(err == ESP_OK, err, NULL, "AC dimmer initialization failed. Timer initialization failed.");
+    ZH_ERROR_CHECK(err == ESP_OK, err, gpio_isr_handler_remove(config->zero_cross_gpio); gpio_uninstall_isr_service();
+                   gpio_reset_pin(config->triac_gpio); gpio_reset_pin(config->zero_cross_gpio), "AC dimmer initialization failed. Timer initialization failed.");
     _init_config = *config;
     _is_initialized = true;
     ZH_LOGI("AC dimmer initialization completed successfully.");
@@ -91,7 +92,7 @@ esp_err_t zh_ac_dimmer_stop(void)
 esp_err_t zh_ac_dimmer_set(uint8_t value)
 {
     ZH_LOGI("AC dimmer setup begin.");
-    ZH_ERROR_CHECK(_is_initialized == true, ESP_ERR_INVALID_STATE, NULL, "AC dimmer stop failed. AC dimmer is not initialized.");
+    ZH_ERROR_CHECK(_is_initialized == true, ESP_ERR_INVALID_STATE, NULL, "AC dimmer setup failed. AC dimmer is not initialized.");
     ZH_ERROR_CHECK(value <= 100, ESP_ERR_INVALID_ARG, NULL, "AC dimmer setup failed. Dimming value invalid.");
     _dimmer_value = value;
     ZH_LOGI("AC dimmer setup completed successfully.");
