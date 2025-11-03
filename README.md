@@ -49,18 +49,17 @@ void app_main(void)
     config.triac_gpio = GPIO_NUM_17;
     zh_ac_dimmer_init(&config);
     zh_ac_dimmer_start();
-    for (;;)
+    for (uint8_t i = 0; i <= 100; ++i)
     {
-        for (uint8_t i = 0; i <= 100; ++i)
-        {
-            zh_ac_dimmer_set(i);
-            vTaskDelay(100 / portTICK_PERIOD_MS);
-        }
-        for (uint8_t i = 100; i > 0; --i)
-        {
-            zh_ac_dimmer_set(i);
-            vTaskDelay(100 / portTICK_PERIOD_MS);
-        }
+        zh_ac_dimmer_set(i);
+        vTaskDelay(100 / portTICK_PERIOD_MS);
     }
+    for (uint8_t i = 100; i > 0; --i)
+    {
+        zh_ac_dimmer_set(i);
+        vTaskDelay(100 / portTICK_PERIOD_MS);
+    }
+    zh_ac_dimmer_stop();
+    zh_ac_dimmer_deinit();
 }
 ```
