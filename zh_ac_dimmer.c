@@ -129,7 +129,7 @@ static esp_err_t _zh_ac_dimmer_gpio_init(const zh_ac_dimmer_init_config_t *confi
     };
     err = gpio_config(&zero_cross_gpio_config);
     ZH_ERROR_CHECK(err == ESP_OK, err, gpio_reset_pin(config->triac_gpio), "Zero cross GPIO configuration failed.");
-    err = gpio_install_isr_service(ESP_INTR_FLAG_LEVEL3);
+    err = gpio_install_isr_service(ESP_INTR_FLAG_LOWMED);
     ZH_ERROR_CHECK(err == ESP_OK, err, gpio_reset_pin(config->triac_gpio); gpio_reset_pin(config->zero_cross_gpio), "Failed install isr service.")
     err = gpio_isr_handler_add(config->zero_cross_gpio, _zh_ac_dimmer_isr_handler, NULL);
     ZH_ERROR_CHECK(err == ESP_OK, err, gpio_uninstall_isr_service(); gpio_reset_pin(config->triac_gpio); gpio_reset_pin(config->zero_cross_gpio), "Failed add isr handler.");
