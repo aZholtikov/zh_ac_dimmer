@@ -183,8 +183,8 @@ static void IRAM_ATTR _zh_ac_dimmer_isr_handler(void *arg)
         }
         _alarm_config.alarm_count = (uint64_t)(((_current_period_us / 110) * (100 - _dimmer_value)) + _zero_cross_us);
         _alarm_config.flags.auto_reload_on_alarm = false;
-        gptimer_set_alarm_action(_dimmer_timer, &_alarm_config); // This function is allowed to run within ISR context.
-        gptimer_start(_dimmer_timer);                            // This function is allowed to run within ISR context.
+        gptimer_set_alarm_action(_dimmer_timer, &_alarm_config);
+        gptimer_start(_dimmer_timer);
     }
 }
 
