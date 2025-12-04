@@ -109,6 +109,16 @@ esp_err_t zh_ac_dimmer_set(uint8_t value)
     return ESP_OK;
 }
 
+esp_err_t zh_ac_dimmer_get(uint8_t *value)
+{
+    ZH_LOGI("AC dimmer getting status begin.");
+    ZH_ERROR_CHECK(value != NULL, ESP_ERR_INVALID_ARG, NULL, "AC dimmer getting status failed. Value is NULL.");
+    ZH_ERROR_CHECK(_is_initialized == true, ESP_ERR_INVALID_STATE, NULL, "AC dimmer getting status failed. AC dimmer is not initialized.");
+    *value = _dimmer_value;
+    ZH_LOGI("AC dimmer getting status completed successfully.");
+    return ESP_OK;
+}
+
 static esp_err_t _zh_ac_dimmer_validate_config(const zh_ac_dimmer_init_config_t *config)
 {
     ZH_ERROR_CHECK(config != NULL, ESP_ERR_INVALID_ARG, NULL, "Initial config is NULL.");

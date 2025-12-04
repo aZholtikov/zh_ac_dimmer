@@ -76,6 +76,15 @@ extern "C"
      */
     esp_err_t zh_ac_dimmer_set(uint8_t value);
 
+    /**
+     * @brief Get AC dimmer dimming value.
+     *
+     * @param[out] value Pointer to dimming value.
+     *
+     * @return ESP_OK if success or an error code otherwise.
+     */
+    esp_err_t zh_ac_dimmer_get(uint8_t *value);
+
 #ifdef __cplusplus
 }
 #endif
