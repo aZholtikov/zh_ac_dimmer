@@ -54,14 +54,14 @@ void app_main(void)
     {
         zh_ac_dimmer_set(i);
         zh_ac_dimmer_get(&value);
-        printf("Dimmer value: %d\n.");
+        printf("Dimmer value: %d.\n", value);
         vTaskDelay(100 / portTICK_PERIOD_MS);
     }
     for (uint8_t i = 100; i > 0; --i)
     {
         zh_ac_dimmer_set(i);
         zh_ac_dimmer_get(&value);
-        printf("Dimmer value: %d\n.");
+        printf("Dimmer value: %d.\n", value);
         vTaskDelay(100 / portTICK_PERIOD_MS);
     }
     zh_ac_dimmer_stop();
