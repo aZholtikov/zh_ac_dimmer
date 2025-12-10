@@ -18,9 +18,6 @@ static gptimer_alarm_config_t _alarm_config = {0};
 
 static zh_ac_dimmer_init_config_t _init_config = {0};
 static volatile uint64_t _prev_us = 0;
-static volatile uint32_t _current_period_us = 0;
-static volatile uint32_t _prev_period_us = 0;
-static volatile uint16_t _zero_cross_us = 0;
 static volatile uint8_t _dimmer_value = 0;
 static volatile bool _is_dimmer_work = false;
 static bool _is_initialized = false;
@@ -73,9 +70,6 @@ esp_err_t zh_ac_dimmer_deinit(void)
     _is_initialized = false;
     _dimmer_timer = NULL;
     _dimmer_value = 0;
-    _current_period_us = 0;
-    _prev_period_us = 0;
-    _zero_cross_us = 0;
     _prev_us = 0;
     ZH_LOGI("AC dimmer deinitialization completed successfully.");
     return ESP_OK;
@@ -144,7 +138,7 @@ static esp_err_t _zh_ac_dimmer_gpio_init(const zh_ac_dimmer_init_config_t *confi
         .intr_type = GPIO_INTR_POSEDGE,
         .mode = GPIO_MODE_INPUT,
         .pin_bit_mask = (1ULL << config->zero_cross_gpio),
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_ENABLE,
         .pull_up_en = GPIO_PULLUP_DISABLE,
     };
     err = gpio_config(&zero_cross_gpio_config);
@@ -188,23 +182,17 @@ static esp_err_t _zh_ac_dimmer_timer_init(void)
 
 static void IRAM_ATTR _zh_ac_dimmer_isr_handler(void *arg)
 {
-    if (_is_dimmer_work == false)
+    uint64_t _current_us = esp_timer_get_time();
+    if (_current_us - _prev_us <= (1250 * 0.9)) // 90% of zero crossing period (1250 µs) at 400 Hz.
     {
         return;
     }
     gpio_set_level(_init_config.triac_gpio, 0);
-    uint64_t _current_us = esp_timer_get_time();
-    _current_period_us = (uint32_t)(_current_us - _prev_us);
     _prev_us = _current_us;
-    if (_current_period_us < 1000)
+    if (_is_dimmer_work == false)
     {
-        if (_current_period_us > 50)
-        {
-            _zero_cross_us = (uint16_t)_current_period_us;
-        }
-        _current_period_us = _prev_period_us;
+        return;
     }
-    _prev_period_us = _current_period_us;
     if (_dimmer_value != 0)
     {
         if (_dimmer_value == 100)
@@ -212,7 +200,7 @@ static void IRAM_ATTR _zh_ac_dimmer_isr_handler(void *arg)
             gpio_set_level(_init_config.triac_gpio, 1);
             return;
         }
-        _alarm_config.alarm_count = (uint64_t)(((_current_period_us / 110) * (100 - _dimmer_value)) + _zero_cross_us);
+        _alarm_config.alarm_count = (uint64_t)((((1250 - 330) / 100) * (100 - _dimmer_value)) + 330); // 330 is 50% of zero crossing time (by logic analyser).
         _alarm_config.flags.auto_reload_on_alarm = false;
         gptimer_set_alarm_action(_dimmer_timer, &_alarm_config);
         gptimer_start(_dimmer_timer);

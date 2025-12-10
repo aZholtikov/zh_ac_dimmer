@@ -1,17 +1,13 @@
-# ESP32 ESP-IDF component for AC dimmer
+# ESP32 ESP-IDF component for AC dimmer 115V/400Hz
 
 ## Tested on
 
 1. [ESP32 ESP-IDF v5.5.1](https://docs.espressif.com/projects/esp-idf/en/v5.5.1/esp32/index.html)
 
-## Features
-
-1. Supports frequency up to 400 Hz.
-2. Automatic frequency detection.
-
 ## Attention
 
-For correct operation, please enable the following settings in the menuconfig:
+1. Supports frequency 400Hz only.
+2. For correct operation, please enable the following settings in the menuconfig:
 
 ```text
 GPIO_CTRL_FUNC_IN_IRAM
