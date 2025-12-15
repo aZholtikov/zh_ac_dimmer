@@ -212,5 +212,5 @@ static bool IRAM_ATTR _zh_ac_dimmer_timer_on_alarm_cb(gptimer_handle_t timer, co
     gpio_set_level((gpio_num_t)_init_config.triac_gpio, 1);
     gptimer_stop(_dimmer_timer);
     gptimer_set_raw_count(_dimmer_timer, 0);
-    return true;
+    return false;
 }
