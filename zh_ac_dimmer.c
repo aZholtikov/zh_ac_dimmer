@@ -17,10 +17,10 @@ static gptimer_handle_t _dimmer_timer = NULL;
 static gptimer_alarm_config_t _alarm_config = {0};
 
 static zh_ac_dimmer_init_config_t _init_config = {0};
-static volatile uint64_t _prev_us = 0;
-static volatile uint8_t _dimmer_value = 0;
-static volatile bool _is_dimmer_work = false;
-static bool _is_initialized = false;
+volatile static uint64_t _prev_us = 0;
+volatile static uint8_t _dimmer_value = 0;
+volatile static bool _is_dimmer_work = false;
+volatile static bool _is_initialized = false;
 
 static esp_err_t _zh_ac_dimmer_validate_config(const zh_ac_dimmer_init_config_t *config);
 static esp_err_t _zh_ac_dimmer_gpio_init(const zh_ac_dimmer_init_config_t *config);
