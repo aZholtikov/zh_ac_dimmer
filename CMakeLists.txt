@@ -1,1 +1,6 @@
-idf_component_register(SRCS "zh_ac_dimmer.c" INCLUDE_DIRS "include" REQUIRES driver esp_timer)
+if(${IDF_VERSION_MAJOR} STREQUAL 6)
+    set(requires esp_driver_gpio esp_driver_gptimer esp_timer)
+else()
+    set(requires driver esp_timer)
+endif()
+idf_component_register(SRCS "zh_ac_dimmer.c" INCLUDE_DIRS "include" REQUIRES ${requires})
