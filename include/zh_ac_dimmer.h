@@ -29,8 +29,8 @@ extern "C"
      */
     typedef struct
     {
-        uint8_t zero_cross_gpio; /*!< Zero cross GPIO. */
-        uint8_t triac_gpio;      /*!< Triac GPIO. */
+        gpio_num_t zero_cross_gpio; /*!< Zero cross GPIO. */
+        gpio_num_t triac_gpio;      /*!< Triac GPIO. */
     } zh_ac_dimmer_init_config_t;
 
     /**
