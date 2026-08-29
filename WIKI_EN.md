@@ -18,7 +18,7 @@
 
 `zh_ac_dimmer` is a lightweight ESP-IDF component for AC dimmer control. It provides a simple API to control AC load power using zero-crossing detection and TRIAC control. The component is designed specifically for ESP32 microcontrollers and uses ESP-IDF v5.0+ drivers (GPTimer, GPIO).
 
-The component supports AC frequency 400Hz only and uses hardware timers for precise timing control.
+The component supports AC frequency of 400 Hz and uses hardware timers for precise timing control.
 
 ---
 
@@ -26,36 +26,37 @@ The component supports AC frequency 400Hz only and uses hardware timers for prec
 
 1. **AC Power Control**: Controls AC load power from 0% to 100%
 2. **Zero-Crossing Detection**: Uses GPIO interrupt for precise timing
-3. **TRIAC Control**: Controls TRIAC gate with precise timing
-4. **Hardware Timer**: Uses GPTimer for accurate dimming control
-5. **Error Handling**: Comprehensive error checking and validation
-6. **Thread-Safe**: Uses ESP-IDF drivers (thread-safe)
-7. **Low Memory**: Minimal memory footprint
-8. **Simple API**: Easy-to-use interface
+3. **TRIAC Control**: Controls TRIAC gate with precise timing via GPTimer
+4. **Hardware Timer**: Uses GPTimer with 1 MHz resolution (1 µs)
+5. **IRAM-safe ISR and Callback**: Interrupts and callbacks are placed in IRAM for reliable operation
+6. **Error Handling**: Comprehensive error checking and configuration validation
+7. **Thread-Safe**: Uses ESP-IDF drivers (thread-safe)
+8. **Minimal Memory Footprint**: Low memory overhead
+9. **Simple API**: Lightweight interface with start/stop/set/get support
 
 ---
 
 ## Installation
 
-1. Navigate to your project's components directory:
+Navigate to your project's components directory:
 
 ```bash
 cd ../your_project/components
 ```
 
-2. Clone the repository:
+Clone the repository:
 
 ```bash
 git clone https://github.com/aZholtikov/zh_ac_dimmer.git
 ```
 
-3. In your application, include the header:
+In your application, include the header:
 
 ```c
 #include "zh_ac_dimmer.h"
 ```
 
-4. The component will be automatically built with your project.
+The component will be automatically built with your project.
 
 ### Required Configuration
 
@@ -77,53 +78,76 @@ CONFIG_GPTIMER_ISR_CACHE_SAFE
 ```c
 typedef struct
 {
-    gpio_num_t zero_cross_gpio; // Zero cross GPIO
-    gpio_num_t triac_gpio;      // Triac GPIO
+    gpio_num_t zero_cross_gpio; // Zero-crossing detection GPIO
+    gpio_num_t triac_gpio;      // TRIAC control GPIO
 } zh_ac_dimmer_init_config_t;
 ```
 
-Use `ZH_AC_DIMMER_INIT_CONFIG_DEFAULT()` macro to initialize with default values:
+Use the `ZH_AC_DIMMER_INIT_CONFIG_DEFAULT()` macro to initialize with default values:
 
 - `zero_cross_gpio`: GPIO_NUM_MAX
 - `triac_gpio`: GPIO_NUM_MAX
 
 ---
 
+### zh_ac_dimmer_handle_t Structure
+
+```c
+typedef struct _zh_ac_dimmer_handle_t zh_ac_dimmer_handle_t;
+```
+
+Opaque instance descriptor.
+
+---
+
 ### zh_ac_dimmer_init()
 
-Initializes the AC dimmer.
+Initializes AC dimmer control.
+
+Allocates memory for handle, validates configuration, initializes GPIO pins (TRIAC as output, zero-crossing as input with positive edge interrupt), sets up ISR service and creates gptimer instance.
 
 **Parameters:**
 
-- `config` - Pointer to AC dimmer initialization configuration structure
+- `config` - Pointer to initialization configuration structure. Must not be NULL
+- `handle` - Pointer to pointer to receive the created handle. Must be NULL
 
 **Returns:**
 
 - `ESP_OK` - Success
-- `ESP_ERR_INVALID_ARG` - Invalid argument (NULL config or invalid GPIO)
+- `ESP_ERR_INVALID_ARG` - Invalid argument (NULL handle or invalid GPIO)
 - `ESP_ERR_INVALID_STATE` - AC dimmer is already initialized
-- `ESP_FAIL` - Initialization failed (GPIO or timer initialization)
+- `ESP_ERR_NO_MEM` - Memory allocation failed
+- `ESP_FAIL` - Initialization error (GPIO, ISR service or timer)
 
 **Example:**
 
 ```c
+zh_ac_dimmer_handle_t *dimmer = NULL;
 zh_ac_dimmer_init_config_t config = ZH_AC_DIMMER_INIT_CONFIG_DEFAULT();
 config.zero_cross_gpio = GPIO_NUM_16;
 config.triac_gpio = GPIO_NUM_17;
-zh_ac_dimmer_init(&config);
+esp_err_t err = zh_ac_dimmer_init(&config, &dimmer);
 ```
 
 ---
 
 ### zh_ac_dimmer_deinit()
 
-Deinitializes the AC dimmer and releases resources.
+Deinitializes AC dimmer control and releases resources.
+
+Stops and deletes gptimer, removes GPIO ISR handler, resets GPIO pins to input mode, frees handle and sets the output pointer to NULL.
+
+**Parameters:**
+
+- `handle` - Pointer to handle. Must not be NULL
 
 **Returns:**
 
 - `ESP_OK` - Success
-- `ESP_ERR_INVALID_STATE` - AC dimmer is not initialized
-- `ESP_FAIL` - Deinitialization failed (GPIO or timer deinitialization)
+- `ESP_ERR_INVALID_ARG` - handle or *handle is NULL
+- `ESP_FAIL` - Timer stop, detach or delete error, or GPIO reset error
+
+**Important:** After calling this function, the handle becomes invalid. To reinitialize, call `zh_ac_dimmer_init()` again.
 
 ---
 
@@ -131,10 +155,16 @@ Deinitializes the AC dimmer and releases resources.
 
 Starts AC dimmer operation.
 
+Enables the dimmer so that zero-crossing events trigger TRIAC firing according to the current dimming value.
+
+**Parameters:**
+
+- `handle` - Pointer to handle. Must not be NULL
+
 **Returns:**
 
 - `ESP_OK` - Success
-- `ESP_ERR_INVALID_STATE` - AC dimmer is not initialized
+- `ESP_ERR_INVALID_ARG` - handle or *handle is NULL
 
 ---
 
@@ -142,42 +172,50 @@ Starts AC dimmer operation.
 
 Stops AC dimmer operation.
 
+Disables TRIAC firing on zero-crossing events. The dimmer can be restarted with `zh_ac_dimmer_start()`.
+
+**Parameters:**
+
+- `handle` - Pointer to handle. Must not be NULL
+
 **Returns:**
 
 - `ESP_OK` - Success
-- `ESP_ERR_INVALID_STATE` - AC dimmer is not initialized
+- `ESP_ERR_INVALID_ARG` - handle or *handle is NULL
 
 ---
 
 ### zh_ac_dimmer_set()
 
-Sets AC dimmer dimming value.
+Sets the AC dimmer dimming value.
+
+Sets the dimming percentage that will be applied on the next zero-crossing event.
 
 **Parameters:**
 
-- `value` - Dimming value (0 to 100, where 0 = off, 100 = full power)
+- `handle` - Pointer to handle. Must not be NULL
+- `value` - Dimming level from 0 (off) to 100 (full power)
 
 **Returns:**
 
 - `ESP_OK` - Success
-- `ESP_ERR_INVALID_STATE` - AC dimmer is not initialized
-- `ESP_ERR_INVALID_ARG` - Invalid dimming value
+- `ESP_ERR_INVALID_ARG` - handle, *handle or value is invalid
 
 ---
 
 ### zh_ac_dimmer_get()
 
-Gets current AC dimmer dimming value.
+Gets the current AC dimmer dimming value.
 
 **Parameters:**
 
-- `value` - Pointer to store the dimming value
+- `handle` - Pointer to handle. Must not be NULL
+- `value` - Pointer to receive the current dimming level (0–100). Must not be NULL
 
 **Returns:**
 
 - `ESP_OK` - Success
-- `ESP_ERR_INVALID_STATE` - AC dimmer is not initialized
-- `ESP_ERR_INVALID_ARG` - Invalid argument (NULL value)
+- `ESP_ERR_INVALID_ARG` - handle, *handle or value is NULL
 
 ---
 
@@ -191,28 +229,29 @@ Gets current AC dimmer dimming value.
 void app_main(void)
 {
     esp_log_level_set("zh_ac_dimmer", ESP_LOG_ERROR);
+    zh_ac_dimmer_handle_t *dimmer = NULL;
     zh_ac_dimmer_init_config_t config = ZH_AC_DIMMER_INIT_CONFIG_DEFAULT();
     config.zero_cross_gpio = GPIO_NUM_16;
     config.triac_gpio = GPIO_NUM_17;
-    zh_ac_dimmer_init(&config);
-    zh_ac_dimmer_start();
+    zh_ac_dimmer_init(&config, &dimmer);
+    zh_ac_dimmer_start(&dimmer);
     uint8_t value = 0;
     for (uint8_t i = 0; i <= 100; ++i)
     {
-        zh_ac_dimmer_set(i);
-        zh_ac_dimmer_get(&value);
-        printf("Dimmer value: %d.\\n", value);
+        zh_ac_dimmer_set(&dimmer, i);
+        zh_ac_dimmer_get(&dimmer, &value);
+        printf("Dimmer value: %d.\n", value);
         vTaskDelay(100 / portTICK_PERIOD_MS);
     }
     for (uint8_t i = 100; i > 0; --i)
     {
-        zh_ac_dimmer_set(i);
-        zh_ac_dimmer_get(&value);
-        printf("Dimmer value: %d.\\n", value);
+        zh_ac_dimmer_set(&dimmer, i);
+        zh_ac_dimmer_get(&dimmer, &value);
+        printf("Dimmer value: %d.\n", value);
         vTaskDelay(100 / portTICK_PERIOD_MS);
     }
-    zh_ac_dimmer_stop();
-    zh_ac_dimmer_deinit();
+    zh_ac_dimmer_stop(&dimmer);
+    zh_ac_dimmer_deinit(&dimmer);
 }
 ```
 
@@ -228,16 +267,18 @@ void app_main(void)
 #define BUTTON_GPIO GPIO_NUM_0
 
 static uint8_t dimmer_value = 50;
+static zh_ac_dimmer_handle_t *dimmer = NULL;
 
 static void IRAM_ATTR button_isr_handler(void *arg)
 {
+    (void)arg;
     dimmer_value = (dimmer_value + 10) % 110;
     if (dimmer_value > 100)
     {
         dimmer_value = 0;
     }
-    zh_ac_dimmer_set(dimmer_value);
-    printf("Dimmer value: %d\\n", dimmer_value);
+    zh_ac_dimmer_set(&dimmer, dimmer_value);
+    printf("Dimmer value: %d\n", dimmer_value);
 }
 
 void app_main(void)
@@ -247,7 +288,7 @@ void app_main(void)
     zh_ac_dimmer_init_config_t config = ZH_AC_DIMMER_INIT_CONFIG_DEFAULT();
     config.zero_cross_gpio = ZERO_CROSS_GPIO;
     config.triac_gpio = TRIAC_GPIO;
-    zh_ac_dimmer_init(&config);
+    zh_ac_dimmer_init(&config, &dimmer);
     // Initialize button
     gpio_config_t button_config = {
         .intr_type = GPIO_INTR_POSEDGE,
@@ -260,14 +301,14 @@ void app_main(void)
     gpio_install_isr_service(ESP_INTR_FLAG_DEFAULT);
     gpio_isr_handler_add(BUTTON_GPIO, button_isr_handler, NULL);
     // Start dimmer
-    zh_ac_dimmer_start();
-    printf("Dimmer initialized. Button on GPIO %d changes dimmer value.\\n", BUTTON_GPIO);
+    zh_ac_dimmer_start(&dimmer);
+    printf("Dimmer initialized. Button on GPIO %d changes dimmer value.\n", BUTTON_GPIO);
     for (;;)
     {
         vTaskDelay(1000 / portTICK_PERIOD_MS);
         uint8_t current_value;
-        zh_ac_dimmer_get(&current_value);
-        printf("Current dimmer value: %d\\n", current_value);
+        zh_ac_dimmer_get(&dimmer, &current_value);
+        printf("Current dimmer value: %d\n", current_value);
     }
 }
 ```
@@ -278,14 +319,15 @@ void app_main(void)
 
 | Parameter | Value |
 |-----------|-------|
-| **Dimming Range** | 0 - 100% |
-| **AC Frequency** | 400 Hz (supported only) |
+| **Dimming Range** | 0–100% (0 = off, 100 = full power) |
+| **AC Frequency** | 400 Hz (zero-crossing period: 1250 µs) |
 | **Zero-Crossing Detection** | GPIO interrupt (positive edge) |
 | **TRIAC Control** | GPIO output |
 | **Timer Resolution** | 1 MHz (1 µs) |
-| **Measurement Time** | ~1250 µs per cycle |
+| **Measurement Time** | ~1250 µs per half-cycle |
+| **Base TRIAC Delay** | 330 µs (measured with logic analyzer) |
 | **ESP-IDF Version** | >= 5.0 |
-| **Platform** | ESP32 series |
+| **Platform** | ESP32 family |
 | **Language** | C (C99) |
 
 ---
@@ -295,9 +337,10 @@ void app_main(void)
 | Error Code | Description |
 |------------|-------------|
 | `ESP_OK` | Operation successful |
-| `ESP_ERR_INVALID_ARG` | Invalid argument (NULL pointer, invalid GPIO, or invalid dimming value) |
-| `ESP_ERR_INVALID_STATE` | AC dimmer is not initialized |
-| `ESP_FAIL` | General failure (GPIO or timer initialization/deinitialization) |
+| `ESP_ERR_INVALID_ARG` | Invalid argument (NULL pointer, invalid GPIO or invalid dimming value) |
+| `ESP_ERR_INVALID_STATE` | AC dimmer is already initialized (only for `zh_ac_dimmer_init`) |
+| `ESP_ERR_NO_MEM` | Memory allocation failed (only for `zh_ac_dimmer_init`) |
+| `ESP_FAIL` | General error (GPIO, ISR service, timer initialization/deinitialization) |
 
 ---
 
@@ -339,12 +382,13 @@ limitations under the License.
 
 ## Additional Notes
 
-- **AC Frequency**: Currently supports 400Hz frequency only
-- **Zero-Crossing Timing**: 1250 µs period (400Hz) with 330 µs compensation for timer delay
-- **GPIO Interrupt**: Zero-crossing detection uses positive edge interrupt
-- **IRAM Requirements**: For correct operation, enable `GPIO_CTRL_FUNC_IN_IRAM`, `CONFIG_GPTIMER_ISR_HANDLER_IN_IRAM`, `CONFIG_GPTIMER_CTRL_FUNC_IN_IRAM`, and `CONFIG_GPTIMER_ISR_CACHE_SAFE` in menuconfig
-- **Thread Safety**: The component uses ESP-IDF drivers which are thread-safe
+- **AC Frequency**: Currently only 400 Hz frequency is supported (aviation frequency). The period between zero-crossings is 1250 µs.
+- **Zero-Crossing Timing**: 1250 µs period (400 Hz) with 330 µs compensation for timer delay. Calculation formula: `alarm_count = (((1250 - 330) / 100) * (100 - dimmer_value)) + 330`.
+- **GPIO Interrupt**: Zero-crossing detection uses positive edge interrupt with debounce protection (interrupts arriving earlier than 90% of the period are ignored).
+- **IRAM Requirements**: For correct operation, enable `GPIO_CTRL_FUNC_IN_IRAM`, `CONFIG_GPTIMER_ISR_HANDLER_IN_IRAM`, `CONFIG_GPTIMER_CTRL_FUNC_IN_IRAM` and `CONFIG_GPTIMER_ISR_CACHE_SAFE` in menuconfig.
+- **Thread Safety**: The component uses ESP-IDF drivers which are thread-safe.
+- **Safety**: This module interacts with mains voltage. Incorrect wiring or insufficient isolation may result in electric shock or equipment damage. Ensure proper optoisolation and safety compliance before deployment.
 
 ---
 
-*Generated for zh_ac_dimmer v1.0.0*
+*Generated for zh_ac_dimmer v3.0.0*

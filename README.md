@@ -1,4 +1,4 @@
-# ESP32 ESP-IDF component for AC dimmer 115V/400Hz
+# ESP32 ESP-IDF component for AC dimmer for 115V/400Hz
 
 ## Wiki
 
@@ -10,23 +10,18 @@
 
 ## SAST Tools
 
-[PVS-Studio](https://pvs-studio.com/pvs-studio/?utm_source=website&utm_medium=github&utm_campaign=open_source) - static analyzer for C, C++, C#, and Java code.
+[PVS-Studio](https://pvs-studio.com/pvs-studio/?utm_source=website&utm_medium=github&utm_campaign=open_source) — static analyzer for C, C++, C#, and Java code.
 
-## Attention
+## Features
 
-1. Supports frequency 400Hz only.
-2. For correct operation, please enable the following settings in the menuconfig:
-
-```text
-GPIO_CTRL_FUNC_IN_IRAM
-CONFIG_GPTIMER_ISR_HANDLER_IN_IRAM
-CONFIG_GPTIMER_CTRL_FUNC_IN_IRAM
-CONFIG_GPTIMER_ISR_CACHE_SAFE
-```
+1. Zero-crossing detection via GPIO interrupt for precise phase-angle control.
+2. TRIAC gate control through ESP-IDF gptimer with configurable dimming level (0–100%).
+3. IRAM-safe ISR and callback functions for reliable operation.
+4. Thread-safe start/stop/set/get API.
 
 ## Using
 
-In an existing project, run the following command to install the components:
+In an existing project, run the following command to install the component:
 
 ```text
 cd ../your_project/components
@@ -41,33 +36,4 @@ In the application, add the component:
 
 ## Examples
 
-```c
-#include "zh_ac_dimmer.h"
-
-void app_main(void)
-{
-    esp_log_level_set("zh_ac_dimmer", ESP_LOG_ERROR);
-    zh_ac_dimmer_init_config_t config = ZH_AC_DIMMER_INIT_CONFIG_DEFAULT();
-    config.zero_cross_gpio = GPIO_NUM_16;
-    config.triac_gpio = GPIO_NUM_17;
-    zh_ac_dimmer_init(&config);
-    zh_ac_dimmer_start();
-    uint8_t value = 0;
-    for (uint8_t i = 0; i <= 100; ++i)
-    {
-        zh_ac_dimmer_set(i);
-        zh_ac_dimmer_get(&value);
-        printf("Dimmer value: %d.\n", value);
-        vTaskDelay(100 / portTICK_PERIOD_MS);
-    }
-    for (uint8_t i = 100; i > 0; --i)
-    {
-        zh_ac_dimmer_set(i);
-        zh_ac_dimmer_get(&value);
-        printf("Dimmer value: %d.\n", value);
-        vTaskDelay(100 / portTICK_PERIOD_MS);
-    }
-    zh_ac_dimmer_stop();
-    zh_ac_dimmer_deinit();
-}
-```
+See Wiki [EN](WIKI_EN.md#usage-examples) | [RU](WIKI_RU.md#примеры-использования)
