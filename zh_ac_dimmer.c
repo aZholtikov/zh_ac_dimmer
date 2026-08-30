@@ -109,7 +109,7 @@ esp_err_t zh_ac_dimmer_init(const zh_ac_dimmer_init_config_t *config, zh_ac_dimm
 {
     ZH_LOGI("AC dimmer initialization started.");
 
-    ZH_ERROR_CHECK(handle != NULL, ESP_ERR_INVALID_ARG, NULL, "AC dimmer initialization failed. Invalid argument.");
+    ZH_ERROR_CHECK(config != NULL && handle != NULL, ESP_ERR_INVALID_ARG, NULL, "AC dimmer initialization failed. Invalid argument.");
     ZH_ERROR_CHECK(*handle == NULL, ESP_ERR_INVALID_STATE, NULL, "AC dimmer initialization failed. AC dimmer is already initialized.");
     *handle = heap_caps_calloc(1, sizeof(zh_ac_dimmer_handle_t), MALLOC_CAP_8BIT);
     ZH_ERROR_CHECK(*handle != NULL, ESP_ERR_NO_MEM, NULL, "AC dimmer initialization failed. Failed to allocate 160X handle.");
@@ -237,7 +237,7 @@ static esp_err_t _zh_ac_dimmer_timer_init(zh_ac_dimmer_handle_t *handle)
 
 static void IRAM_ATTR _zh_ac_dimmer_isr_handler(void *arg)
 {
-    zh_ac_dimmer_handle_t *handle = arg;
+    zh_ac_dimmer_handle_t *handle = (zh_ac_dimmer_handle_t *)arg;
     uint64_t _current_us = esp_timer_get_time();
     // Ignore spurious interrupts that arrive too soon after the previous one.
     if (_current_us - handle->prev_zero_crossing_us > (1250 * 0.9)) // 90% of zero-crossing period (1250 µs) at 400 Hz.
@@ -268,7 +268,7 @@ static void IRAM_ATTR _zh_ac_dimmer_isr_handler(void *arg)
 static bool IRAM_ATTR _zh_ac_dimmer_timer_on_alarm_cb(gptimer_handle_t timer, const gptimer_alarm_event_data_t *edata, void *user_ctx)
 {
     (void)edata;
-    zh_ac_dimmer_handle_t *handle = user_ctx;
+    zh_ac_dimmer_handle_t *handle = (zh_ac_dimmer_handle_t *)user_ctx;
     gpio_set_level(handle->triac_gpio, 1);
     gptimer_stop(timer);
     gptimer_set_raw_count(timer, 0);
