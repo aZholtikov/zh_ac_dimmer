@@ -105,7 +105,7 @@ static void _zh_ac_dimmer_isr_handler(void *arg);
  */
 static bool _zh_ac_dimmer_timer_on_alarm_cb(gptimer_handle_t timer, const gptimer_alarm_event_data_t *edata, void *user_ctx);
 
-esp_err_t zh_ac_dimmer_init(const zh_ac_dimmer_init_config_t *config, zh_ac_dimmer_handle_t **handle) // -V2008
+esp_err_t zh_ac_dimmer_init(const zh_ac_dimmer_init_config_t *config, zh_ac_dimmer_handle_t **handle)
 {
     ZH_LOGI("AC dimmer initialization started.");
 
@@ -124,7 +124,7 @@ esp_err_t zh_ac_dimmer_init(const zh_ac_dimmer_init_config_t *config, zh_ac_dimm
     return ESP_OK;
 }
 
-esp_err_t zh_ac_dimmer_deinit(zh_ac_dimmer_handle_t **handle) // -V2008
+esp_err_t zh_ac_dimmer_deinit(zh_ac_dimmer_handle_t **handle)
 {
     ZH_LOGI("AC dimmer deinitialization started.");
     ZH_ERROR_CHECK(handle != NULL && *handle != NULL, ESP_ERR_INVALID_ARG, NULL, "AC dimmer deinitialization failed. Invalid argument.");
@@ -185,7 +185,7 @@ static esp_err_t _zh_ac_dimmer_validate_config(const zh_ac_dimmer_init_config_t 
     return ESP_OK;
 }
 
-static esp_err_t _zh_ac_dimmer_gpio_init(const zh_ac_dimmer_init_config_t *config, zh_ac_dimmer_handle_t *handle) // -V2008
+static esp_err_t _zh_ac_dimmer_gpio_init(const zh_ac_dimmer_init_config_t *config, zh_ac_dimmer_handle_t *handle)
 {
     gpio_config_t triac_gpio_config = {
         .intr_type = GPIO_INTR_DISABLE,
