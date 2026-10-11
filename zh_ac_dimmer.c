@@ -23,29 +23,34 @@ static const char *TAG = "zh_ac_dimmer";
 /**
  * @brief Internal handle for AC dimmer instance.
  *
- * Stores GPIO pin assignments, gptimer handle, timing state,
- * current dimming level, and running state.
+ * Stores GPIO pin assignments, gptimer handle, zero-crossing timing state,
+ * auto-calibrated base offset, current dimming level, and running state.
  */
 struct _zh_ac_dimmer_handle_t
 {
     gpio_num_t zero_cross_gpio;           /*!< GPIO pin for zero-crossing detection input */
     gpio_num_t triac_gpio;                /*!< GPIO pin for TRIAC gate control output */
     gptimer_handle_t dimmer_timer_handle; /*!< gptimer instance used for TRIAC firing delay */
-    uint64_t prev_zero_crossing_us;       /*!< Timestamp of the last zero-crossing event (us) */
-    uint8_t dimmer_value;                 /*!< Current dimming level (0 = off, 100 = full) */
-    bool is_dimmer_work;                  /*!< `true` when the dimmer is actively running */
+    uint64_t prev_zero_crossing_us;       /*!< Timestamp of the previous rising edge (us) */
+    uint64_t pulse_start_us;              /*!< Timestamp of the current rising edge, used to measure pulse width (us) */
+    uint32_t period_us;                   /*!< Filtered zero-crossing half-period in microseconds (0 until measured) */
+    volatile uint32_t base_offset_us;     /*!< Auto-calibrated advance of the zero-cross ISR relative to T0 (us) */
+    volatile uint32_t auto_base_samples;  /*!< Number of valid pulse-width measurements used for calibration */
+    volatile uint8_t dimmer_value;        /*!< Current dimming level, 0 off .. 100 full */
+    volatile bool is_dimmer_work;         /*!< Set when the dimmer is actively running */
+    bool last_edge_was_rising;            /*!< Tracks edge polarity to reject duplicate/glitch edges */
 };
 
 /**
  * @brief Validate the AC dimmer initialization configuration.
  *
- * Checks that both GPIO pins are valid (not `GPIO_NUM_MAX`),
- * are within the acceptable range, and are not the same pin.
+ * Checks that both GPIO pins are valid (less than `GPIO_NUM_MAX`) and are not
+ * the same pin.
  *
  * @param config Pointer to the initialization configuration structure
  *
  * @return ESP_OK if the configuration is valid
- * @return ESP_ERR_INVALID_ARG if any GPIO pin is invalid or both pins are the same
+ * @return ESP_ERR_INVALID_ARG if any GPIO pin is invalid, or both pins are the same
  */
 static esp_err_t _zh_ac_dimmer_validate_config(const zh_ac_dimmer_init_config_t *config);
 
@@ -53,7 +58,7 @@ static esp_err_t _zh_ac_dimmer_validate_config(const zh_ac_dimmer_init_config_t 
  * @brief Initialize GPIO pins for TRIAC control and zero-crossing detection.
  *
  * Configures the TRIAC GPIO as an output (pulled low) and the zero-crossing
- * GPIO as an input with pull-down and positive-edge interrupt. Installs the
+ * GPIO as an input with pull-down and both-edge interrupt. Installs the
  * ESP-IDF ISR service (if not already installed) and registers the ISR
  * handler for the zero-crossing pin.
  *
@@ -72,10 +77,11 @@ static esp_err_t _zh_ac_dimmer_gpio_init(const zh_ac_dimmer_init_config_t *confi
 /**
  * @brief Initialize the gptimer used for TRIAC firing delay.
  *
- * Creates a new gptimer with a 1 MHz resolution (1 us steps) and registers
- * the alarm callback that fires the TRIAC. The timer is enabled but not
- * started; it is armed and started from the zero-crossing ISR for each
- * half-cycle.
+ * Creates a new gptimer with a 1 MHz resolution (1 us steps), registers the
+ * alarm callback that fires the TRIAC, and enables the timer.
+ * The timer is enabled but not started. It is stopped, reset and armed from
+ * the rising-edge branch of the zero-crossing ISR, then started when a delay
+ * is required.
  *
  * @param handle Pointer to the dimmer handle (timer handle stored here)
  *
@@ -87,16 +93,39 @@ static esp_err_t _zh_ac_dimmer_timer_init(zh_ac_dimmer_handle_t *handle);
 /**
  * @brief ISR handler for zero-crossing detection.
  *
- * Executed on every positive edge of the zero-crossing signal. Ignores
- * spurious interrupts that arrive sooner than 90% of the expected
- * zero-crossing period (1250 us at 400 Hz). Resets the TRIAC gate low and
- * updates the last zero-crossing timestamp. Depending on the dimming level:
+ * Executed on both edges of the zero-crossing signal. The edge polarity is
+ * determined from the current GPIO level:
  *
- * - At dimming = 0: TRIAC stays off (gate held low).
- * - At dimming = 100: TRIAC fires immediately (gate set high).
- * - At dimming 1–99: gptimer alarm fires after a calculated delay. The alarm
- *   count is mapped from the dimming value with a 330 us base offset
- *   (50% of the zero-crossing period, measured with a logic analyzer).
+ * - On a falling edge (falling edge follows a rising edge of the same pulse),
+ *   the width of the zero-crossing pulse is measured and fed into the
+ *   auto-calibration EMA for `base_offset_us`. The value represents the
+ *   advance of the rising edge relative to the physical mains zero crossing
+ *   and is computed as `pulse_width / 2` (valid for a symmetric AC-input
+ *   optocoupler). No TRIAC action is taken on falling edges.
+ *
+ * - On a rising edge, the interval since the previous rising edge is compared
+ *   against the half-cycle range derived from `ZH_AC_DIMMER_FREQ_MIN_HZ` and
+ *   `ZH_AC_DIMMER_FREQ_MAX_HZ`:
+ *
+ *   - An interval shorter than the minimum is treated as spurious and ignored.
+ *   - An interval longer than the maximum resets the timing state: the period
+ *     filter and the calibration sample counter are cleared, the TRIAC gate is
+ *     set low, and only the timestamp is kept.
+ *   - The first rising edge only stores its timestamp and sets the TRIAC gate low.
+ *
+ *   Each accepted rising edge updates the low-pass filtered half-period and
+ *   resets the TRIAC gate low, then behaves according to the running state and
+ *   the dimming level:
+ *
+ *   - When not running or at dimming = 0: the timer is stopped and reset, and
+ *     the gate stays low.
+ *   - When the computed delay is not positive: the TRIAC fires immediately
+ *     (gate set high).
+ *   - Otherwise: the gptimer alarm fires after a delay calculated from the
+ *     filtered period, the dimming value and the auto-calibrated base offset,
+ *     clamped to leave a guard band (period / 20, at least 5 us) before the
+ *     end of the half-cycle. The delay decreases as the dimming value
+ *     increases, so the TRIAC fires earlier and the load receives more power.
  *
  * @param arg Pointer to the dimmer handle (passed from GPIO ISR)
  */
@@ -105,8 +134,10 @@ static void _zh_ac_dimmer_isr_handler(void *arg);
 /**
  * @brief gptimer alarm callback that fires the TRIAC.
  *
- * Sets the TRIAC gate high to trigger conduction, then stops and resets
- * the timer for the next half-cycle.
+ * Stops the timer and clears its count, then sets the TRIAC gate high to
+ * trigger conduction, but only while the dimmer is running and the dimming
+ * level is above zero. Otherwise the gate is left unchanged until the next
+ * zero-crossing event.
  *
  * @param timer Handle to the gptimer that triggered the alarm
  * @param edata Event data (unused)
@@ -138,12 +169,14 @@ esp_err_t zh_ac_dimmer_deinit(zh_ac_dimmer_handle_t **handle)
 {
     ZH_LOGI("AC dimmer deinitialization started.");
     ZH_ERROR_CHECK(handle != NULL && *handle != NULL, ESP_ERR_INVALID_ARG, NULL, "AC dimmer deinitialization failed. Invalid argument.");
-    ZH_ERROR_CHECK_CONT(gptimer_stop((*handle)->dimmer_timer_handle) == ESP_OK, NULL, "AC dimmer deinitialization failed. Timer stop fail.");
-    ZH_ERROR_CHECK_CONT(gptimer_disable((*handle)->dimmer_timer_handle) == ESP_OK, NULL, "AC dimmer deinitialization failed. Timer disable fail.");
-    ZH_ERROR_CHECK_CONT(gptimer_del_timer((*handle)->dimmer_timer_handle) == ESP_OK, NULL, "AC dimmer deinitialization failed. Timer delete fail.");
+    (*handle)->is_dimmer_work = false;
     ZH_ERROR_CHECK_CONT(gpio_isr_handler_remove((*handle)->zero_cross_gpio) == ESP_OK, NULL, "AC dimmer deinitialization failed. Remove GPIO isr handler failed.");
     ZH_ERROR_CHECK_CONT(gpio_reset_pin((*handle)->triac_gpio) == ESP_OK, NULL, "AC dimmer deinitialization failed. Reset GPIO failed.");
     ZH_ERROR_CHECK_CONT(gpio_reset_pin((*handle)->zero_cross_gpio) == ESP_OK, NULL, "AC dimmer deinitialization failed. Reset GPIO failed.");
+    ZH_ERROR_CHECK_CONT(gptimer_stop((*handle)->dimmer_timer_handle) == ESP_OK, NULL, "AC dimmer deinitialization failed. Timer stop fail.");
+    ZH_ERROR_CHECK_CONT(gptimer_disable((*handle)->dimmer_timer_handle) == ESP_OK, NULL, "AC dimmer deinitialization failed. Timer disable fail.");
+    ZH_ERROR_CHECK_CONT(gptimer_del_timer((*handle)->dimmer_timer_handle) == ESP_OK, NULL, "AC dimmer deinitialization failed. Timer delete fail.");
+
     heap_caps_free(*handle);
     *handle = NULL;
     ZH_LOGI("AC dimmer deinitialization completed successfully.");
@@ -207,7 +240,7 @@ static esp_err_t _zh_ac_dimmer_gpio_init(const zh_ac_dimmer_init_config_t *confi
     ZH_ERROR_CHECK(gpio_config(&triac_gpio_config) == ESP_OK, ESP_FAIL, NULL, "Triac GPIO configuration failed.");
     ZH_ERROR_CHECK(gpio_set_level(config->triac_gpio, 0) == ESP_OK, ESP_FAIL, NULL, "Triac GPIO set failed.");
     gpio_config_t zero_cross_gpio_config = {
-        .intr_type = GPIO_INTR_POSEDGE,
+        .intr_type = GPIO_INTR_ANYEDGE,
         .mode = GPIO_MODE_INPUT,
         .pin_bit_mask = (1ULL << config->zero_cross_gpio),
         .pull_down_en = GPIO_PULLDOWN_ENABLE,
@@ -232,7 +265,7 @@ static esp_err_t _zh_ac_dimmer_timer_init(zh_ac_dimmer_handle_t *handle)
     gptimer_config_t timer_config = {
         .clk_src = GPTIMER_CLK_SRC_DEFAULT,
         .direction = GPTIMER_COUNT_UP,
-        .resolution_hz = 1 * 1000 * 1000,
+        .resolution_hz = 1000000,
     };
     ZH_ERROR_CHECK(gptimer_new_timer(&timer_config, &handle->dimmer_timer_handle) == ESP_OK, ESP_FAIL, NULL, "Failed create dimmer timer.");
     gptimer_event_callbacks_t cbs = {
@@ -248,39 +281,114 @@ static esp_err_t _zh_ac_dimmer_timer_init(zh_ac_dimmer_handle_t *handle)
 static void _zh_ac_dimmer_isr_handler(void *arg)
 {
     zh_ac_dimmer_handle_t *handle = (zh_ac_dimmer_handle_t *)arg;
-    uint64_t _current_us = esp_timer_get_time();
-    // Ignore spurious interrupts that arrive too soon after the previous one.
-    if (_current_us - handle->prev_zero_crossing_us > (1250 * 0.9)) // 90% of zero-crossing period (1250 µs) at 400 Hz.
+    uint64_t now_us = esp_timer_get_time();
+    if (gpio_get_level(handle->zero_cross_gpio) == 0)
     {
-        gpio_set_level(handle->triac_gpio, 0);
-        handle->prev_zero_crossing_us = _current_us;
-        if (handle->is_dimmer_work == true)
+        if (handle->last_edge_was_rising)
         {
-            if (handle->dimmer_value != 0)
+            uint64_t pulse_width = now_us - handle->pulse_start_us;
+            const uint64_t pulse_min_us = 4;
+            const uint64_t pulse_max_us = (handle->period_us > 0) ? (handle->period_us / 4) : 2000;
+            if (pulse_width >= pulse_min_us && pulse_width <= pulse_max_us)
             {
-                if (handle->dimmer_value == 100)
+                uint32_t measured_adv = (uint32_t)(pulse_width / 2);
+                if (handle->auto_base_samples == 0)
                 {
-                    gpio_set_level(handle->triac_gpio, 1);
-                    return;
+                    handle->base_offset_us = measured_adv;
                 }
-                gptimer_alarm_config_t _alarm_config = {0};
-                // Calculate alarm delay: maps dimming (1–99) to a µs value.
-                // 330 µs is the base offset (50% of zero-crossing period, measured with a logic analyzer).
-                _alarm_config.alarm_count = (uint64_t)((((1250 - 330) * (100 - handle->dimmer_value)) / 100) + 330);
-                _alarm_config.flags.auto_reload_on_alarm = false;
-                gptimer_set_alarm_action(handle->dimmer_timer_handle, &_alarm_config);
-                gptimer_start(handle->dimmer_timer_handle);
+                else
+                {
+                    handle->base_offset_us =
+                        (handle->base_offset_us * 15 + measured_adv) / 16;
+                }
+                if (handle->auto_base_samples < UINT32_MAX)
+                {
+                    ++handle->auto_base_samples;
+                }
             }
         }
+        handle->last_edge_was_rising = false;
+        return;
     }
+    handle->last_edge_was_rising = true;
+    handle->pulse_start_us = now_us;
+    if (handle->prev_zero_crossing_us == 0)
+    {
+        handle->prev_zero_crossing_us = now_us;
+        gpio_set_level(handle->triac_gpio, 0);
+        return;
+    }
+    uint64_t delta_us = now_us - handle->prev_zero_crossing_us;
+    const uint64_t period_min_us = 1000000 / (2 * ZH_AC_DIMMER_FREQ_MAX_HZ);
+    const uint64_t period_max_us = 1000000 / (2 * ZH_AC_DIMMER_FREQ_MIN_HZ);
+    if (delta_us < period_min_us)
+    {
+        return;
+    }
+    if (delta_us > period_max_us)
+    {
+        handle->prev_zero_crossing_us = now_us;
+        handle->period_us = 0;
+        handle->auto_base_samples = 0;
+        gpio_set_level(handle->triac_gpio, 0);
+        return;
+    }
+    if (handle->period_us == 0)
+    {
+        handle->period_us = (uint32_t)delta_us;
+    }
+    else
+    {
+        handle->period_us = (handle->period_us * 7 + (uint32_t)delta_us) / 8;
+    }
+    handle->prev_zero_crossing_us = now_us;
+    gpio_set_level(handle->triac_gpio, 0);
+    if (handle->is_dimmer_work == false || handle->dimmer_value == 0)
+    {
+        gptimer_stop(handle->dimmer_timer_handle);
+        gptimer_set_raw_count(handle->dimmer_timer_handle, 0);
+        return;
+    }
+    uint32_t period = handle->period_us;
+    uint32_t base = handle->base_offset_us;
+    if (base >= period)
+    {
+        base = period;
+    }
+    int32_t t_fire = (int32_t)(((uint64_t)period * (100 - handle->dimmer_value)) / 100);
+    int32_t delay_us = t_fire + (int32_t)base;
+    if (delay_us <= 0)
+    {
+        gpio_set_level(handle->triac_gpio, 1);
+        return;
+    }
+    int32_t guard_us = (int32_t)(period / 20);
+    if (guard_us < 5)
+    {
+        guard_us = 5;
+    }
+    if (delay_us > (int32_t)period - guard_us)
+    {
+        delay_us = (int32_t)period - guard_us;
+    }
+    gptimer_stop(handle->dimmer_timer_handle);
+    gptimer_set_raw_count(handle->dimmer_timer_handle, 0);
+    gptimer_alarm_config_t alarm_config = {0};
+    alarm_config.alarm_count = (uint32_t)delay_us;
+    alarm_config.flags.auto_reload_on_alarm = false;
+    gptimer_set_alarm_action(handle->dimmer_timer_handle, &alarm_config);
+    gptimer_start(handle->dimmer_timer_handle);
 }
 
 static bool _zh_ac_dimmer_timer_on_alarm_cb(gptimer_handle_t timer, const gptimer_alarm_event_data_t *edata, void *user_ctx)
 {
     (void)edata;
     zh_ac_dimmer_handle_t *handle = (zh_ac_dimmer_handle_t *)user_ctx;
-    gpio_set_level(handle->triac_gpio, 1);
     gptimer_stop(timer);
     gptimer_set_raw_count(timer, 0);
+    if (handle->is_dimmer_work && handle->dimmer_value > 0)
+    {
+        gpio_set_level(handle->triac_gpio, 1);
+    }
     return false;
 }

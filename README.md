@@ -1,11 +1,12 @@
-# ESP32 ESP-IDF component for AC dimmer for 115V/400Hz
+# ESP32 ESP-IDF component for AC dimmer
 
 ## Features
 
-1. Zero-crossing detection via GPIO interrupt (positive edge) with filtering of spurious interrupts for precise phase-angle control.
-2. TRIAC gate control through ESP-IDF gptimer (1 MHz resolution) with configurable dimming level (0–100%).
-3. Designed for 400 Hz AC mains (1250 us half-period), with timing constants adjustable for other frequencies.
-4. Handle-based API: init/deinit (with full GPIO, ISR and timer cleanup) and start/stop/set/get.
+1. Zero-crossing detection via GPIO interrupt on both edges (`GPIO_INTR_ANYEDGE`), with edge polarity determined from the current GPIO level and duplicate/glitch edge rejection. Spurious-interrupt filtering: the interval between rising edges must be within the half-cycle range derived from the frequency 30 - 500 Hz (shorter intervals are ignored, longer ones reset the timing and calibration state).
+2. Measured zero-crossing half-period is low-pass filtered and used to calculate the TRIAC firing delay, so the dimmer adapts to the actual mains frequency.
+3. TRIAC gate control through ESP-IDF gptimer (1 MHz resolution) with configurable dimming level (0–100%): 0 keeps the load off, 100 fires the TRIAC immediately. The firing delay is clamped to leave a guard band (period / 20, at least 5 us) before the end of the half-cycle.
+4. Automatic runtime calibration of the hardware base offset: on each falling edge the width of the zero-crossing pulse is measured and fed into an EMA (`pulse_width / 2`), compensating for the zero-crossing detector advance relative to the physical mains zero crossing.
+5. Handle-based API: init/deinit (with full GPIO, ISR and timer cleanup), start/stop, set/get dimming level.
 
 ## Using
 
