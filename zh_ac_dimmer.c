@@ -176,7 +176,6 @@ esp_err_t zh_ac_dimmer_deinit(zh_ac_dimmer_handle_t **handle)
     ZH_ERROR_CHECK_CONT(gptimer_stop((*handle)->dimmer_timer_handle) == ESP_OK, NULL, "AC dimmer deinitialization failed. Timer stop fail.");
     ZH_ERROR_CHECK_CONT(gptimer_disable((*handle)->dimmer_timer_handle) == ESP_OK, NULL, "AC dimmer deinitialization failed. Timer disable fail.");
     ZH_ERROR_CHECK_CONT(gptimer_del_timer((*handle)->dimmer_timer_handle) == ESP_OK, NULL, "AC dimmer deinitialization failed. Timer delete fail.");
-
     heap_caps_free(*handle);
     *handle = NULL;
     ZH_LOGI("AC dimmer deinitialization completed successfully.");
@@ -284,7 +283,7 @@ static void _zh_ac_dimmer_isr_handler(void *arg)
     uint64_t now_us = esp_timer_get_time();
     if (gpio_get_level(handle->zero_cross_gpio) == 0)
     {
-        if (handle->last_edge_was_rising)
+        if (handle->last_edge_was_rising == true)
         {
             uint64_t pulse_width = now_us - handle->pulse_start_us;
             const uint64_t pulse_min_us = 4;
@@ -298,8 +297,7 @@ static void _zh_ac_dimmer_isr_handler(void *arg)
                 }
                 else
                 {
-                    handle->base_offset_us =
-                        (handle->base_offset_us * 15 + measured_adv) / 16;
+                    handle->base_offset_us = (handle->base_offset_us * 15 + measured_adv) / 16;
                 }
                 if (handle->auto_base_samples < UINT32_MAX)
                 {
