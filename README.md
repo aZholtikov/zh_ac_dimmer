@@ -2,21 +2,10 @@
 
 ## Features
 
-1. Zero-crossing detection via GPIO interrupt for precise phase-angle control.
-2. TRIAC gate control through ESP-IDF gptimer with configurable dimming level (0–100%).
-3. IRAM-safe ISR and callback functions for reliable operation.
-4. Thread-safe start/stop/set/get API.
-
-## Note
-
-Enable the following settings in menuconfig:
-
-```text
-GPIO_CTRL_FUNC_IN_IRAM
-CONFIG_GPTIMER_ISR_HANDLER_IN_IRAM
-CONFIG_GPTIMER_CTRL_FUNC_IN_IRAM
-CONFIG_GPTIMER_ISR_CACHE_SAFE
-```
+1. Zero-crossing detection via GPIO interrupt (positive edge) with filtering of spurious interrupts for precise phase-angle control.
+2. TRIAC gate control through ESP-IDF gptimer (1 MHz resolution) with configurable dimming level (0–100%).
+3. Designed for 400 Hz AC mains (1250 us half-period), with timing constants adjustable for other frequencies.
+4. Handle-based API: init/deinit (with full GPIO, ISR and timer cleanup) and start/stop/set/get.
 
 ## Using
 

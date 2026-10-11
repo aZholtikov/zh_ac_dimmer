@@ -12,9 +12,9 @@
  * - Zero-crossing detection via GPIO interrupt
  * - TRIAC gate control through ESP-IDF gptimer
  * - Configurable dimming level (0–100 %)
- * - Thread-safe start/stop/set/get API
+ * - Start/stop/set/get API
  *
- * @note The driver assumes a 400 Hz AC mains frequency (1250 µs period).
+ * @note The driver assumes a 400 Hz AC mains frequency (1250 us period).
  *       Adjust the timing constants in `zh_ac_dimmer.c` for other frequencies.
  * @warning This module interacts with mains voltage. Incorrect wiring or
  *          insufficient isolation can cause electric shock or hardware damage.
@@ -23,6 +23,8 @@
 
 #pragma once
 
+#include "stdint.h"
+#include "esp_heap_caps.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "driver/gptimer.h"
@@ -68,8 +70,7 @@ extern "C"
      * positive-edge interrupt), installs the ISR service, and creates the
      * gptimer instance.
      *
-     * @param[in] config Pointer to the initialization configuration structure.
-     *                   May point to a temporary variable (not stored internally)
+     * @param[in] config Pointer to the initialization configuration structure (may point to a temporary variable, not stored internally)
      * @param[out] handle Pointer to receive the created dimmer handle (must be NULL)
      *
      * @return ESP_OK on success
@@ -87,7 +88,7 @@ extern "C"
      * the GPIO pins to input mode, frees the dimmer handle, and sets the
      * output handle to NULL.
      *
-     * @param[in,out] handle Pointer to the dimmer handle (must not be NULL)
+     * @param[in,out] handle Pointer to the dimmer handle, set to NULL on return (must not be NULL)
      *
      * @return ESP_OK on success
      * @return ESP_ERR_INVALID_ARG if handle or *handle is NULL
@@ -104,7 +105,7 @@ extern "C"
      * Enables the dimmer so that zero-crossing events trigger TRIAC firing
      * according to the current dimming value.
      *
-     * @param[in,out] handle Pointer to the dimmer handle (must not be NULL)
+     * @param[in] handle Pointer to the dimmer handle (must not be NULL)
      *
      * @return ESP_OK on success
      * @return ESP_ERR_INVALID_ARG if handle or *handle is NULL
@@ -117,7 +118,7 @@ extern "C"
      * Disables TRIAC firing on zero-crossing events. The dimmer can be
      * restarted with `zh_ac_dimmer_start()`.
      *
-     * @param[in,out] handle Pointer to the dimmer handle (must not be NULL)
+     * @param[in] handle Pointer to the dimmer handle (must not be NULL)
      *
      * @return ESP_OK on success
      * @return ESP_ERR_INVALID_ARG if handle or *handle is NULL
@@ -131,7 +132,7 @@ extern "C"
      * zero-crossing event.
      *
      * @param[in] handle Pointer to the dimmer handle (must not be NULL)
-     * @param[in] value Dimming level from 0 (off) to 100 (full brightness)
+     * @param[in] value Dimming level from 0 (off) to 100 (full brightness) (must be <= 100)
      *
      * @return ESP_OK on success
      * @return ESP_ERR_INVALID_ARG if handle, *handle, or value is invalid
